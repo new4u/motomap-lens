@@ -6,7 +6,7 @@
 
 See what's actually filling your context window. Context Lens is a local proxy that captures LLM API calls from your coding tools and shows you a composition breakdown: what percentage is system prompts, tool definitions, conversation history, tool results, thinking blocks. It answers the question every developer asks: "why is this session so expensive?"
 
-Works with Claude Code, Codex, Gemini CLI, Aider, Pi, and anything else that talks to OpenAI/Anthropic/Google APIs. No code changes needed.
+Works with Claude Code, Codex, Gemini CLI, Cline, Aider, Pi, and anything else that talks to OpenAI/Anthropic/Google APIs. No code changes needed.
 
 **Using AI coding tools across a team?** Token costs compound fast when every developer runs agents all day. Context Lens gives you per-session visibility into where the budget goes — which tools, which patterns, which sessions are outliers. Export sessions as [LHAR](docs/LHAR.md) to share and compare. Team dashboards are on the roadmap; if that's relevant for you, [open an issue](https://github.com/larsderidder/context-lens/issues) or watch this repo.
 
@@ -26,6 +26,7 @@ npm install -g context-lens
 context-lens claude
 context-lens codex
 context-lens gemini
+context-lens cline
 context-lens aider --model claude-sonnet-4
 context-lens pi
 context-lens -- python my_agent.py
@@ -143,6 +144,7 @@ services:
 | **OpenAI** | Reverse Proxy | ✅ Stable | `OPENAI_BASE_URL` |
 | **Google Gemini** | Reverse Proxy | 🧪 Experimental | `GOOGLE_GEMINI_BASE_URL` |
 | **ChatGPT (Subscription)** | MITM Proxy | ✅ Stable | `https_proxy` |
+| **Cline** | MITM Proxy | ✅ Stable | `https_proxy` + `NODE_EXTRA_CA_CERTS` |
 | **Pi Coding Agent** | Reverse Proxy (temporary per-run config) | ✅ Stable | `PI_CODING_AGENT_DIR` (set by wrapper) |
 | **OpenAI-Compatible** | Reverse Proxy | ✅ Stable | `UPSTREAM_OPENAI_URL` + `OPENAI_BASE_URL` |
 | **Aider / Generic** | Reverse Proxy | ✅ Stable | Detects standard patterns |
@@ -248,6 +250,17 @@ If you only use OpenCode with a single OpenAI-compatible endpoint (e.g. OpenCode
 ```bash
 UPSTREAM_OPENAI_URL=https://opencode.ai/zen/v1 context-lens -- opencode "prompt"
 ```
+
+### Cline
+
+Cline with Anthropic OAuth routes through `api.cline.bot` rather than `api.anthropic.com`, so `ANTHROPIC_BASE_URL` has no effect. Use mitmproxy to intercept the traffic:
+
+```bash
+pipx install mitmproxy
+context-lens cline
+```
+
+Cline is a Node.js process, so it uses `NODE_EXTRA_CA_CERTS` (not `SSL_CERT_FILE`) to trust the mitmproxy CA certificate. The CLI handles this automatically.
 
 ### OpenAI-Compatible Endpoints
 
