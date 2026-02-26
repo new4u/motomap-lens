@@ -919,15 +919,19 @@ export class Store {
       case "image":
         return { type: "image" };
       default: {
-        // Handle thinking blocks and other unknown types; truncate text-like fields
-        const any = b as any;
-        if (any.thinking)
+        // Handle thinking blocks and other unknown types; truncate text-like fields.
+        // Use typed narrowing so this stays correct when new block types are added.
+        const fallback = b as Record<string, unknown>;
+        if (typeof fallback.thinking === "string")
           return {
-            ...any,
-            thinking: any.thinking.slice(0, limit),
-          } as ContentBlock;
-        if (any.text)
-          return { ...any, text: any.text.slice(0, limit) } as ContentBlock;
+            ...fallback,
+            thinking: fallback.thinking.slice(0, limit),
+          } as unknown as ContentBlock;
+        if (typeof fallback.text === "string")
+          return {
+            ...fallback,
+            text: fallback.text.slice(0, limit),
+          } as unknown as ContentBlock;
         return b;
       }
     }
