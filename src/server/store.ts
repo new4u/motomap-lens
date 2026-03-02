@@ -748,6 +748,10 @@ export class Store {
    * contentBlocks (which have no base64 data) using the fixed estimateTokens().
    */
   private migrateImageTokenCounts(): number {
+    // Skip if this migration has already completed successfully.
+    const markerPath = path.join(this.dataDir, ".image-token-migrate-done");
+    if (fs.existsSync(markerPath)) return 0;
+
     let migrated = 0;
     const updateTotals = (ci: ContextInfo, messagesTokens: number): void => {
       ci.messagesTokens = messagesTokens;
@@ -794,6 +798,7 @@ export class Store {
         `Migrated ${migrated} entries with inflated image token counts`,
       );
     }
+    this.writeMarker(markerPath);
     return migrated;
   }
 
