@@ -38,7 +38,7 @@ export interface ParsedCliArgs {
   useMitm: boolean;
   privacyLevel?: string;
   redactPreset?: RedactPreset;
-  noRehydrate?: boolean;
+  rehydrate?: boolean;
   commandName?: string;
   commandArguments: string[];
   error?: string;
@@ -171,7 +171,7 @@ export function parseCliArgs(args: string[]): ParsedCliArgs {
   let useMitm = false;
   let privacyLevel: string | undefined;
   let redactPreset: RedactPreset | undefined;
-  let noRehydrate = false;
+  let rehydrate = false;
   let explicitSeparator = false;
   let commandStartIndex = -1;
   for (let i = 0; i < args.length; i++) {
@@ -213,8 +213,8 @@ export function parseCliArgs(args: string[]): ParsedCliArgs {
       redactPreset = "secrets";
       continue;
     }
-    if (arg === "--no-rehydrate") {
-      noRehydrate = true;
+    if (arg === "--rehydrate") {
+      rehydrate = true;
       continue;
     }
     if (arg.startsWith("--redact=")) {
@@ -297,7 +297,7 @@ export function parseCliArgs(args: string[]): ParsedCliArgs {
       useMitm,
       privacyLevel,
       redactPreset,
-      noRehydrate,
+      rehydrate,
       commandArguments: [],
       error: "Error: No command specified after --",
     };
@@ -312,7 +312,7 @@ export function parseCliArgs(args: string[]): ParsedCliArgs {
     useMitm,
     privacyLevel,
     redactPreset,
-    noRehydrate,
+    rehydrate,
     commandName,
     commandArguments,
   };
@@ -356,7 +356,7 @@ export function formatHelpText(): string {
     "  --no-update-check      Skip npm update check for this run",
     "  --mitm                 Use mitmproxy for interception instead of base URL override (pi only)",
     "  --redact[=preset]      Strip sensitive data before capture (experimental). Preset: secrets|pii|strict (default: secrets)",
-    "  --no-rehydrate         With --redact: don't restore original values in responses (one-way redaction)",
+    "  --rehydrate            With --redact: restore original values in responses (off by default)",
     "",
     "Command aliases:",
     "  cc -> claude",

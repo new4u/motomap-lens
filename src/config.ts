@@ -17,7 +17,7 @@ export interface ContextLensConfig {
   proxy: {
     port: number;
     redact?: "secrets" | "pii" | "strict";
-    noRehydrate: boolean;
+    rehydrate: boolean;
   };
   ui: {
     port: number;
@@ -32,7 +32,7 @@ const DEFAULTS: ContextLensConfig = {
   proxy: {
     port: 4040,
     redact: undefined,
-    noRehydrate: false,
+    rehydrate: false,
   },
   ui: {
     port: 4041,
@@ -81,7 +81,7 @@ const VALID_PRIVACY = new Set(["minimal", "standard", "full"]);
 type RawSection = {
   port?: unknown;
   redact?: unknown;
-  no_rehydrate?: unknown;
+  rehydrate?: unknown;
   no_open?: unknown;
   level?: unknown;
 };
@@ -103,8 +103,8 @@ function mergeConfig(raw: unknown): ContextLensConfig {
     if (typeof proxy.redact === "string" && VALID_REDACT.has(proxy.redact)) {
       cfg.proxy.redact = proxy.redact as ContextLensConfig["proxy"]["redact"];
     }
-    if (typeof proxy.no_rehydrate === "boolean") {
-      cfg.proxy.noRehydrate = proxy.no_rehydrate;
+    if (typeof proxy.rehydrate === "boolean") {
+      cfg.proxy.rehydrate = proxy.rehydrate;
     }
   }
 
@@ -137,7 +137,7 @@ export function exampleConfig(): string {
     "[proxy]",
     "# port = 4040",
     '# redact = "secrets"   # secrets | pii | strict',
-    "# no_rehydrate = false",
+    "# rehydrate = false",
     "",
     "[ui]",
     "# port = 4041",

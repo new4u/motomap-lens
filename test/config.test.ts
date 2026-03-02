@@ -10,7 +10,7 @@ describe("config", () => {
     assert.equal(typeof cfg.proxy.port, "number");
     assert.equal(typeof cfg.ui.port, "number");
     assert.equal(typeof cfg.ui.noOpen, "boolean");
-    assert.equal(typeof cfg.proxy.noRehydrate, "boolean");
+    assert.equal(typeof cfg.proxy.rehydrate, "boolean");
   });
 
   it("exampleConfig returns a non-empty string", () => {

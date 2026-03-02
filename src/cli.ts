@@ -54,9 +54,9 @@ if (redactPreset !== undefined) {
   process.env.CONTEXT_LENS_REDACT = redactPreset;
 }
 
-const noRehydrate = parsedArgs.noRehydrate ?? userConfig.proxy.noRehydrate;
-if (noRehydrate) {
-  process.env.CONTEXT_LENS_NO_REHYDRATE = "1";
+const rehydrate = parsedArgs.rehydrate ?? userConfig.proxy.rehydrate;
+if (rehydrate) {
+  process.env.CONTEXT_LENS_REHYDRATE = "1";
 }
 if (
   !parsedArgs.noUpdateCheck &&
@@ -1366,7 +1366,7 @@ async function runDoctor(): Promise<number> {
   if (configExists) {
     const cfg = loadConfig();
     if (cfg.proxy.redact) info("config: redact", cfg.proxy.redact);
-    if (cfg.proxy.noRehydrate) info("config: no_rehydrate", "true");
+    if (cfg.proxy.rehydrate) info("config: rehydrate", "true");
     if (cfg.ui.noOpen) info("config: no_open", "true");
     if (cfg.privacy.level) info("config: privacy", cfg.privacy.level);
   }

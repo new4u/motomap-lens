@@ -25,7 +25,7 @@ async function loadRedactPlugin(): Promise<ProxyPlugin | null> {
   if (!preset) return null;
   try {
     const { createRedactPlugin } = await import("@contextio/redact");
-    const reversible = process.env.CONTEXT_LENS_NO_REHYDRATE !== "1";
+    const reversible = process.env.CONTEXT_LENS_REHYDRATE === "1";
     const plugin = createRedactPlugin({
       preset: preset as "secrets" | "pii" | "strict",
       reversible,

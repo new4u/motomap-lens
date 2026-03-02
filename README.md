@@ -40,9 +40,9 @@ This starts the proxy (port 4040), opens the web UI (http://localhost:4041), set
 context-lens --privacy=minimal claude   # minimal|standard|full
 context-lens --no-open codex            # don't auto-open the UI
 context-lens --no-ui -- claude          # proxy only, no UI
-context-lens --redact claude            # strip secrets before capture (reversible)
+context-lens --redact claude            # strip secrets before capture
 context-lens --redact=pii claude        # broader PII redaction
-context-lens --redact --no-rehydrate claude  # one-way redaction
+context-lens --redact --rehydrate claude  # restore original values in responses
 context-lens doctor                     # check ports, certs, config, background state
 context-lens background start           # start detached proxy + UI
 context-lens background status
@@ -63,7 +63,7 @@ Persistent settings live in `~/.context-lens/config.toml`. CLI flags always over
 [proxy]
 # port = 4040
 # redact = "secrets"   # secrets | pii | strict
-# no_rehydrate = false
+# rehydrate = false
 
 [ui]
 # port = 4041
@@ -223,10 +223,10 @@ context-lens --redact=pii claude      # broader PII removal
 context-lens --redact=strict claude   # maximum removal
 ```
 
-Redaction is **reversible by default**: redacted values are stored alongside the capture and rehydrated on load. To make it permanent, add `--no-rehydrate`:
+Redaction is **one-way by default**: redacted values are permanently removed from captures. To enable reversible redaction (original values stored in memory and restored in responses), add `--rehydrate`:
 
 ```bash
-context-lens --redact=strict --no-rehydrate claude
+context-lens --redact --rehydrate claude
 ```
 
 To always redact, set it in `~/.context-lens/config.toml`:
