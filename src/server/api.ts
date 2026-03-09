@@ -1,3 +1,6 @@
+import { execSync } from "node:child_process";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+
 import type { JsonValue } from "@contextio/core";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -6,6 +9,12 @@ import * as v from "valibot";
 import { ingestCapture } from "../analysis/ingest.js";
 import { parseContextInfo } from "../core.js";
 import { toLharJson, toLharJsonl } from "../lhar.js";
+import type { ProxyConfigFile } from "../proxy/config.js";
+import {
+  PROXY_CONFIG_DIR,
+  PROXY_CONFIG_PATH,
+  readProxyConfigFile,
+} from "../proxy/config.js";
 import {
   IngestCapturePayloadSchema,
   IngestLegacyPayloadSchema,
@@ -212,7 +221,7 @@ function buildExportFilename(
   const sessionPart = `session-${sanitizeFilenamePart(conversation, "all")}`;
   const privacyPart = `privacy-${sanitizeFilenamePart(privacy, "standard")}`;
   const ext = format === "lhar" ? "lhar" : "lhar.json";
-  return `context-lens-export-${sessionPart}-${privacyPart}.${ext}`;
+  return `motomap-export-${sessionPart}-${privacyPart}.${ext}`;
 }
 
 /**
@@ -642,6 +651,135 @@ export function createApiApp(store: Store): Hono {
       // Keep the stream open until the client disconnects
       await new Promise(() => {});
     });
+  });
+
+  // --- Proxy Config (API 轮盘) ---
+
+  /** Mask API key for frontend display: show first 6 + last 2 chars */
+  function maskApiKey(key: string): string {
+    if (key.length <= 10) return "***";
+    return `${key.slice(0, 6)}...${key.slice(-2)}`;
+  }
+
+  app.get("/api/config/proxy", (c) => {
+    const config = readProxyConfigFile();
+    if (!config) {
+      // Return default empty config
+      return c.json({
+        providers: {
+          anthropic: {
+            endpoints: [],
+            strategy: "failover" as const,
+          },
+          openai: {
+            endpoints: [],
+            strategy: "failover" as const,
+          },
+          gemini: {
+            endpoints: [],
+            strategy: "failover" as const,
+          },
+        },
+        updatedAt: "",
+      });
+    }
+    // Mask API keys before sending to frontend
+    const masked: ProxyConfigFile = {
+      ...config,
+      providers: Object.fromEntries(
+        Object.entries(config.providers).map(([name, provider]) => [
+          name,
+          {
+            ...provider,
+            endpoints: provider.endpoints.map((ep) => ({
+              ...ep,
+              apiKey: maskApiKey(ep.apiKey),
+            })),
+          },
+        ]),
+      ),
+    };
+    return c.json(masked);
+  });
+
+  app.post("/api/config/proxy", async (c) => {
+    const body = (await c.req.json()) as ProxyConfigFile;
+    if (!body.providers) {
+      return c.json({ error: "providers is required" }, 400);
+    }
+
+    // If frontend sends masked keys, merge with existing real keys
+    const existing = readProxyConfigFile();
+    if (existing) {
+      for (const [name, provider] of Object.entries(body.providers)) {
+        const existingProvider = existing.providers[name];
+        if (!existingProvider) continue;
+        for (let i = 0; i < provider.endpoints.length; i++) {
+          const ep = provider.endpoints[i];
+          if (ep.apiKey.includes("...") && existingProvider.endpoints[i]) {
+            ep.apiKey = existingProvider.endpoints[i].apiKey;
+          }
+        }
+      }
+    }
+
+    body.updatedAt = new Date().toISOString();
+
+    try {
+      if (!existsSync(PROXY_CONFIG_DIR)) {
+        mkdirSync(PROXY_CONFIG_DIR, { recursive: true });
+      }
+      writeFileSync(PROXY_CONFIG_PATH, JSON.stringify(body, null, 2), "utf-8");
+      return c.json({ ok: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return c.json({ error: `Failed to write config: ${msg}` }, 500);
+    }
+  });
+
+  app.post("/api/config/proxy/restart", (c) => {
+    try {
+      // Find proxy process by port (default 4040)
+      const pidOutput = execSync("lsof -ti :4040 2>/dev/null || true")
+        .toString()
+        .trim();
+      if (pidOutput) {
+        const pids = pidOutput.split("\n").filter(Boolean);
+        for (const pid of pids) {
+          try {
+            process.kill(parseInt(pid, 10), "SIGHUP");
+          } catch {
+            // Process may have already exited
+          }
+        }
+        return c.json({
+          ok: true,
+          message: `Sent SIGHUP to PIDs: ${pids.join(", ")}`,
+        });
+      }
+      return c.json({
+        ok: true,
+        message: "No proxy process found on port 4040",
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return c.json({ error: `Restart failed: ${msg}` }, 500);
+    }
+  });
+
+  app.get("/api/config/proxy/status", (c) => {
+    try {
+      const pidOutput = execSync("lsof -ti :4040 2>/dev/null || true")
+        .toString()
+        .trim();
+      if (pidOutput) {
+        const pids = pidOutput.split("\n").filter(Boolean);
+        return c.json({ running: true, pid: parseInt(pids[0], 10) });
+      }
+      return c.json({ running: false });
+    } catch {
+      return c.json({ running: false });
+    }
   });
 
   // --- Export ---

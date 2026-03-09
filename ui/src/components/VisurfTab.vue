@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * VisurfTab.vue - Context Lens 的 Visurf 风格 Map 可视化
+ * VisurfTab.vue - MotoMap by Visurf 的 Map 可视化
  *
  * 颜色 scheme 来自 本地调试+openclaw.md:
  * - System Prompt → 蓝 (中心节点)

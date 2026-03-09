@@ -1,9 +1,10 @@
 /**
  * Proxy configuration.
  *
- * Reads from environment variables with safe defaults.
+ * Priority: proxy-config.json > environment variables > defaults.
  */
 
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -19,19 +20,76 @@ export interface ProxyConfig {
   ingestUrl: string | null;
 }
 
+/** JSON config file format written by the Settings UI */
+export interface ProxyConfigFile {
+  providers: {
+    [name: string]: {
+      endpoints: {
+        url: string;
+        apiKey: string;
+        weight: number;
+        enabled: boolean;
+      }[];
+      strategy: "weighted" | "round-robin" | "failover";
+    };
+  };
+  updatedAt: string;
+}
+
+export const PROXY_CONFIG_DIR = join(homedir(), ".context-lens");
+export const PROXY_CONFIG_PATH = join(PROXY_CONFIG_DIR, "proxy-config.json");
+
+/** Read proxy-config.json if it exists, return null otherwise */
+export function readProxyConfigFile(): ProxyConfigFile | null {
+  try {
+    if (existsSync(PROXY_CONFIG_PATH)) {
+      const raw = readFileSync(PROXY_CONFIG_PATH, "utf-8");
+      return JSON.parse(raw) as ProxyConfigFile;
+    }
+  } catch (e) {
+    console.warn("Failed to read proxy-config.json, falling back to env:", e);
+  }
+  return null;
+}
+
+/** Extract first enabled endpoint URL for a provider from the config file */
+function firstEnabledUrl(
+  configFile: ProxyConfigFile,
+  providerName: string,
+): string | null {
+  const provider = configFile.providers[providerName];
+  if (!provider) return null;
+  const ep = provider.endpoints.find((e) => e.enabled);
+  return ep?.url || null;
+}
+
 export function loadProxyConfig(): ProxyConfig {
+  // Try loading from JSON config file first
+  const configFile = readProxyConfigFile();
+
   const upstreams: Upstreams = {
-    openai: process.env.UPSTREAM_OPENAI_URL || "https://api.openai.com",
+    openai:
+      (configFile && firstEnabledUrl(configFile, "openai")) ||
+      process.env.UPSTREAM_OPENAI_URL ||
+      "https://api.openai.com",
     anthropic:
-      process.env.UPSTREAM_ANTHROPIC_URL || "https://api.anthropic.com",
-    chatgpt: process.env.UPSTREAM_CHATGPT_URL || "https://chatgpt.com",
+      (configFile && firstEnabledUrl(configFile, "anthropic")) ||
+      process.env.UPSTREAM_ANTHROPIC_URL ||
+      "https://api.anthropic.com",
+    chatgpt:
+      (configFile && firstEnabledUrl(configFile, "chatgpt")) ||
+      process.env.UPSTREAM_CHATGPT_URL ||
+      "https://chatgpt.com",
     gemini:
+      (configFile && firstEnabledUrl(configFile, "gemini")) ||
       process.env.UPSTREAM_GEMINI_URL ||
       "https://generativelanguage.googleapis.com",
     geminiCodeAssist:
+      (configFile && firstEnabledUrl(configFile, "geminiCodeAssist")) ||
       process.env.UPSTREAM_GEMINI_CODE_ASSIST_URL ||
       "https://cloudcode-pa.googleapis.com",
     vertex:
+      (configFile && firstEnabledUrl(configFile, "vertex")) ||
       process.env.UPSTREAM_VERTEX_URL ||
       "https://us-central1-aiplatform.googleapis.com",
   };

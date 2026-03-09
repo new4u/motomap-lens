@@ -24,11 +24,11 @@ import type { TagInfo } from '@/api-types'
 import { classifyEntries } from '@/utils/messages'
 
 export type ViewMode = 'inspector' | 'dashboard' | 'compare'
-export type InspectorTab = 'overview' | 'messages' | 'timeline' | 'visurf'
+export type InspectorTab = 'overview' | 'messages' | 'timeline' | 'visurf' | 'settings'
 export type DensityMode = 'comfortable' | 'compact'
 export type SelectionMode = 'live' | 'pinned'
 
-const DENSITY_STORAGE_KEY = 'context-lens-density'
+const DENSITY_STORAGE_KEY = 'motomap-density'
 
 export const useSessionStore = defineStore('session', () => {
   // --- Data ---

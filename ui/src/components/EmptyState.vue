@@ -14,9 +14,9 @@
       Start a tool through the CLI to capture traffic:
     </div>
     <div class="empty-examples">
-      <code>context-lens claude</code>
-      <code>context-lens codex</code>
-      <code>context-lens gemini</code>
+      <code>motomap claude</code>
+      <code>motomap codex</code>
+      <code>motomap gemini</code>
     </div>
   </div>
 </template>

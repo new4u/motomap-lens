@@ -75,7 +75,7 @@ function buildExportFilename(
   const ext = format === 'lhar' ? 'lhar' : 'lhar.json'
   const sessionPart = `session-${safeFilenamePart(conversationId || 'all')}`
   const privacyPart = 'privacy-standard'
-  return `context-lens-export-${sessionPart}-${privacyPart}.${ext}`
+  return `motomap-export-${sessionPart}-${privacyPart}.${ext}`
 }
 
 async function downloadWithFilename(url: string, filename: string) {
@@ -175,7 +175,7 @@ function onSessionIdKeydown(e: KeyboardEvent) {
         <circle cx="9" cy="9" r="4" fill="none" stroke="var(--accent-blue)" stroke-width="1" opacity="0.6" />
         <circle cx="9" cy="9" r="1.5" fill="var(--accent-blue)" />
       </svg>
-      <span class="brand-text">Context Lens</span>
+      <span class="brand-text">MotoMap <span class="brand-sub">by Visurf</span></span>
     </a>
 
     <Transition name="session-ctx">
@@ -387,6 +387,13 @@ function onSessionIdKeydown(e: KeyboardEvent) {
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.01em;
+}
+
+.brand-sub {
+  font-weight: 400;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin-left: 2px;
 }
 
 // ── Separator ──

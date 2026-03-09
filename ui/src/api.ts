@@ -123,7 +123,53 @@ export async function decomposeNode(
   return res.json()
 }
 
-// --- Visurf Integration ---
+// --- Proxy Config (API 轮盘) ---
+
+export interface ProxyEndpoint {
+  url: string
+  apiKey: string
+  weight: number
+  enabled: boolean
+}
+
+export interface ProxyProvider {
+  endpoints: ProxyEndpoint[]
+  strategy: 'weighted' | 'round-robin' | 'failover'
+}
+
+export interface ProxyConfig {
+  providers: Record<string, ProxyProvider>
+  updatedAt: string
+}
+
+export async function fetchProxyConfig(): Promise<ProxyConfig> {
+  const res = await fetch(`${BASE}/api/config/proxy`)
+  if (!res.ok) throw new Error(`GET /api/config/proxy failed: ${res.status}`)
+  return res.json()
+}
+
+export async function saveProxyConfig(config: ProxyConfig): Promise<void> {
+  const res = await fetch(`${BASE}/api/config/proxy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  })
+  if (!res.ok) throw new Error(`POST /api/config/proxy failed: ${res.status}`)
+}
+
+export async function restartProxy(): Promise<{ ok: boolean; message?: string }> {
+  const res = await fetch(`${BASE}/api/config/proxy/restart`, { method: 'POST' })
+  if (!res.ok) throw new Error(`POST /api/config/proxy/restart failed: ${res.status}`)
+  return res.json()
+}
+
+export async function getProxyStatus(): Promise<{ running: boolean; pid?: number }> {
+  const res = await fetch(`${BASE}/api/config/proxy/status`)
+  if (!res.ok) throw new Error(`GET /api/config/proxy/status failed: ${res.status}`)
+  return res.json()
+}
+
+// --- MotoMap by Visurf Integration ---
 
 const VISURF_DEFAULT_URL = 'http://localhost:4000'
 
