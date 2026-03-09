@@ -16,7 +16,7 @@ const store = useSessionStore()
 const syncingFromHash = ref(false)
 const appReady = ref(false)
 const HASH_SESSIONS = '#sessions'
-const INSPECTOR_TABS: readonly InspectorTab[] = ['overview', 'messages', 'timeline']
+const INSPECTOR_TABS: readonly InspectorTab[] = ['overview', 'messages', 'timeline', 'visurf']
 let refreshInterval: ReturnType<typeof setInterval> | null = null
 
 // Track navigation direction for slide transitions

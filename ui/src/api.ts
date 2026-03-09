@@ -88,3 +88,54 @@ export async function removeSessionTag(conversationId: string, tag: string): Pro
   const data = await res.json()
   return data.tags
 }
+
+// --- Visurf Integration ---
+
+const VISURF_DEFAULT_URL = 'http://localhost:4000'
+
+export async function sendToVisurf(
+  session: ConversationGroup,
+  visurfUrl = VISURF_DEFAULT_URL
+): Promise<{ ok: boolean; nodeId?: string; error?: string }> {
+  // Convert Context Lens session to Visurf ingest format
+  const payload = {
+    provider: session.source || 'unknown',
+    sessionId: session.id,
+    requestBody: {
+      model: session.entries[0]?.contextInfo?.model || 'unknown',
+    },
+    usage: {
+      total_tokens: session.entries.reduce((sum, e) => sum + (e.usage?.inputTokens || 0) + (e.usage?.outputTokens || 0), 0),
+    },
+    timings: {
+      total_ms: session.entries.reduce((sum, e) => sum + (e.timings?.total_ms || 0), 0),
+    },
+    // Include full session data for richer visualization
+    contextLens: {
+      id: session.id,
+      source: session.source,
+      workingDirectory: session.workingDirectory,
+      entryCount: session.entries.length,
+      entries: session.entries.map(e => ({
+        id: e.id,
+        model: e.contextInfo?.model,
+        inputTokens: e.usage?.inputTokens,
+        outputTokens: e.usage?.outputTokens,
+        latencyMs: e.timings?.total_ms,
+        timestamp: e.timestamp,
+      })),
+    },
+  }
+
+  const res = await fetch(`${visurfUrl}/api/ingest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+  if (!res.ok) {
+    return { ok: false, error: `HTTP ${res.status}` }
+  }
+
+  return res.json()
+}

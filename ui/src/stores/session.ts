@@ -24,7 +24,7 @@ import type { TagInfo } from '@/api-types'
 import { classifyEntries } from '@/utils/messages'
 
 export type ViewMode = 'inspector' | 'dashboard' | 'compare'
-export type InspectorTab = 'overview' | 'messages' | 'timeline'
+export type InspectorTab = 'overview' | 'messages' | 'timeline' | 'visurf'
 export type DensityMode = 'comfortable' | 'compact'
 export type SelectionMode = 'live' | 'pinned'
 

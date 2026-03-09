@@ -5,6 +5,7 @@ import type { InspectorTab } from '@/stores/session'
 import OverviewTab from '@/components/OverviewTab.vue'
 import MessagesTab from '@/components/MessagesTab.vue'
 import TimelineTab from '@/components/TimelineTab.vue'
+import VisurfTab from '@/components/VisurfTab.vue'
 import TurnScrubber from '@/components/TurnScrubber.vue'
 
 const store = useSessionStore()
@@ -13,12 +14,14 @@ const tabs: { id: InspectorTab; label: string; icon: string }[] = [
   { id: 'overview', label: 'Overview', icon: 'i-carbon-dashboard' },
   { id: 'messages', label: 'Messages', icon: 'i-carbon-chat' },
   { id: 'timeline', label: 'Timeline', icon: 'i-carbon-activity' },
+  { id: 'visurf', label: 'Map', icon: 'i-carbon-map' },
 ]
 
 const tabComponents = {
   overview: OverviewTab,
   messages: MessagesTab,
   timeline: TimelineTab,
+  visurf: VisurfTab,
 } satisfies Record<InspectorTab, unknown>
 
 const activeTabComponent = computed(() => tabComponents[store.inspectorTab])
