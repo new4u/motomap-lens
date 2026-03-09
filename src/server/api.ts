@@ -1,5 +1,7 @@
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 import type { JsonValue } from "@contextio/core";
 import { Hono } from "hono";
@@ -813,6 +815,175 @@ export function createApiApp(store: Store): Hono {
       return c.json({ running: false });
     } catch {
       return c.json({ running: false });
+    }
+  });
+
+  // --- OpenClaw Models Config ---
+
+  const OPENCLAW_CONFIG_PATH = join(homedir(), ".openclaw", "openclaw.json");
+
+  function readOpenClawConfig(): Record<string, unknown> | null {
+    try {
+      if (existsSync(OPENCLAW_CONFIG_PATH)) {
+        return JSON.parse(
+          readFileSync(OPENCLAW_CONFIG_PATH, "utf-8"),
+        ) as Record<string, unknown>;
+      }
+    } catch (e) {
+      console.warn("Failed to read openclaw.json:", e);
+    }
+    return null;
+  }
+
+  app.get("/api/config/models", (c) => {
+    const config = readOpenClawConfig();
+    if (!config) {
+      return c.json({ providers: {}, primary: "", compaction: "safeguard" });
+    }
+    const models = config.models as Record<string, unknown> | undefined;
+    const agents = config.agents as Record<string, unknown> | undefined;
+    const defaults = (agents?.defaults ?? {}) as Record<string, unknown>;
+    const modelConfig = (defaults.model ?? {}) as Record<string, unknown>;
+    const compactionConfig = (defaults.compaction ?? {}) as Record<
+      string,
+      unknown
+    >;
+
+    // Mask API keys in providers
+    const providers =
+      ((models?.providers ?? {}) as Record<string, Record<string, unknown>>) ||
+      {};
+    const maskedProviders: Record<string, unknown> = {};
+    for (const [name, provider] of Object.entries(providers)) {
+      const key = (provider.apiKey as string) || "";
+      maskedProviders[name] = {
+        ...provider,
+        apiKey:
+          key.length > 10
+            ? `${key.slice(0, 6)}...${key.slice(-2)}`
+            : key
+              ? "***"
+              : "",
+      };
+    }
+
+    return c.json({
+      providers: maskedProviders,
+      primary: modelConfig.primary || "",
+      compaction: compactionConfig.mode || "safeguard",
+    });
+  });
+
+  app.post("/api/config/models", async (c) => {
+    const body = await c.req.json();
+    const config = readOpenClawConfig() || {};
+
+    // Merge providers — preserve real API keys if masked
+    const existingModels = (config.models ?? {}) as Record<string, unknown>;
+    const existingProviders =
+      ((existingModels.providers ?? {}) as Record<
+        string,
+        Record<string, unknown>
+      >) || {};
+
+    const newProviders = (body.providers ?? {}) as Record<
+      string,
+      Record<string, unknown>
+    >;
+    for (const [name, provider] of Object.entries(newProviders)) {
+      const key = (provider.apiKey as string) || "";
+      if (key.includes("...") && existingProviders[name]) {
+        provider.apiKey = existingProviders[name].apiKey;
+      }
+    }
+
+    // Update config
+    if (!config.models) config.models = {};
+    (config.models as Record<string, unknown>).providers = newProviders;
+    (config.models as Record<string, unknown>).mode =
+      existingModels.mode || "merge";
+
+    // Update primary model
+    if (body.primary !== undefined) {
+      if (!config.agents) config.agents = {};
+      const agents = config.agents as Record<string, unknown>;
+      if (!agents.defaults) agents.defaults = {};
+      const defaults = agents.defaults as Record<string, unknown>;
+      if (!defaults.model) defaults.model = {};
+      (defaults.model as Record<string, unknown>).primary = body.primary;
+    }
+
+    // Update compaction
+    if (body.compaction !== undefined) {
+      if (!config.agents) config.agents = {};
+      const agents = config.agents as Record<string, unknown>;
+      if (!agents.defaults) agents.defaults = {};
+      const defaults = agents.defaults as Record<string, unknown>;
+      if (!defaults.compaction) defaults.compaction = {};
+      (defaults.compaction as Record<string, unknown>).mode = body.compaction;
+    }
+
+    // Update meta
+    if (!config.meta) config.meta = {};
+    (config.meta as Record<string, unknown>).lastTouchedAt =
+      new Date().toISOString();
+
+    try {
+      writeFileSync(
+        OPENCLAW_CONFIG_PATH,
+        JSON.stringify(config, null, 4),
+        "utf-8",
+      );
+      return c.json({ ok: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return c.json({ error: `Failed to write openclaw.json: ${msg}` }, 500);
+    }
+  });
+
+  app.post("/api/config/models/list", async (c) => {
+    const { baseUrl, apiKey, api } = await c.req.json();
+    if (!baseUrl) return c.json({ error: "baseUrl required" }, 400);
+
+    try {
+      let models: { id: string; name: string }[] = [];
+
+      if (api === "anthropic-messages" || api === "anthropic") {
+        // Anthropic: no standard list endpoint, return known models
+        models = [
+          { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
+          { id: "claude-opus-4-20250514", name: "Claude Opus 4" },
+          { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
+          { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+          { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5" },
+        ];
+      } else {
+        // OpenAI-compatible: GET /v1/models
+        const url = baseUrl.replace(/\/$/, "");
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+        if (apiKey && !apiKey.includes("...")) {
+          headers.Authorization = `Bearer ${apiKey}`;
+        }
+        const res = await fetch(`${url}/v1/models`, { headers });
+        if (res.ok) {
+          const data = (await res.json()) as {
+            data?: { id: string; name?: string }[];
+          };
+          models = (data.data || []).map((m) => ({
+            id: m.id,
+            name: m.name || m.id,
+          }));
+        } else {
+          return c.json({ error: `Failed to list models: ${res.status}` }, 502);
+        }
+      }
+
+      return c.json({ models });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return c.json({ error: `List models failed: ${msg}` }, 500);
     }
   });
 

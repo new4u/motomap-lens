@@ -169,6 +169,56 @@ export async function getProxyStatus(): Promise<{ running: boolean; pid?: number
   return res.json()
 }
 
+// --- OpenClaw Models Config ---
+
+export interface ModelInfo {
+  id: string
+  name: string
+}
+
+export interface OpenClawProvider {
+  baseUrl: string
+  apiKey: string
+  api: string
+  models: ModelInfo[]
+}
+
+export interface ModelsConfig {
+  providers: Record<string, OpenClawProvider>
+  primary: string
+  compaction: string
+}
+
+export async function fetchModelsConfig(): Promise<ModelsConfig> {
+  const res = await fetch(`${BASE}/api/config/models`)
+  if (!res.ok) throw new Error(`GET /api/config/models failed: ${res.status}`)
+  return res.json()
+}
+
+export async function saveModelsConfig(config: {
+  providers: Record<string, OpenClawProvider>
+  primary: string
+  compaction: string
+}): Promise<void> {
+  const res = await fetch(`${BASE}/api/config/models`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  })
+  if (!res.ok) throw new Error(`POST /api/config/models failed: ${res.status}`)
+}
+
+export async function listProviderModels(baseUrl: string, apiKey: string, api: string): Promise<ModelInfo[]> {
+  const res = await fetch(`${BASE}/api/config/models/list`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ baseUrl, apiKey, api }),
+  })
+  if (!res.ok) throw new Error(`POST /api/config/models/list failed: ${res.status}`)
+  const data = await res.json()
+  return data.models
+}
+
 // --- MotoMap by Visurf Integration ---
 
 const VISURF_DEFAULT_URL = 'http://localhost:4000'
