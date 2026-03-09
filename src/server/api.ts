@@ -13,12 +13,170 @@ import {
 import type {
   AgentGroup,
   CapturedEntry,
+  ContextInfo,
   Conversation,
   ConversationGroup,
   PrivacyLevel,
 } from "../types.js";
 import { projectEntry } from "./projection.js";
 import type { Store } from "./store.js";
+
+// ═══ Decompose helpers ═══
+
+interface DecomposeSubNode {
+  id: string;
+  label: string;
+  type: string;
+  tokens_estimate: number;
+  description: string;
+  importance: number;
+}
+
+interface DecomposeResult {
+  nodes: DecomposeSubNode[];
+  edges: { source: string; target: string; relation: string }[];
+  summary: string;
+  sourceNode: { label: string; category: string; tokens: number };
+}
+
+function extractCategoryContent(
+  contextInfo: ContextInfo,
+  category: string,
+): string {
+  switch (category) {
+    case "system_prompt":
+    case "system_injections":
+      return contextInfo.systemPrompts.map((s) => s.content).join("\n---\n");
+
+    case "tool_definitions":
+      return contextInfo.tools
+        .map((t) => {
+          if ("function" in t && t.function) {
+            return `[${t.function.name}] ${t.function.description || ""}`;
+          }
+          const at = t as { name: string; description?: string };
+          return `[${at.name}] ${at.description || ""}`;
+        })
+        .join("\n");
+
+    case "user_text":
+      return contextInfo.messages
+        .filter((m) => m.role === "user")
+        .map((m) => m.content)
+        .join("\n---\n");
+
+    case "assistant_text":
+      return contextInfo.messages
+        .filter((m) => m.role === "assistant")
+        .map((m) => m.content)
+        .join("\n---\n");
+
+    case "tool_calls":
+      return contextInfo.messages
+        .filter((m) => m.role === "assistant")
+        .flatMap((m) =>
+          (m.contentBlocks || [])
+            .filter((b) => b.type === "tool_use")
+            .map(
+              (b) =>
+                `[${(b as { name: string }).name}] ${JSON.stringify((b as { input: unknown }).input).slice(0, 500)}`,
+            ),
+        )
+        .join("\n");
+
+    case "tool_results":
+      return contextInfo.messages
+        .filter((m) => m.role === "tool")
+        .map((m) => m.content)
+        .join("\n---\n");
+
+    case "thinking":
+      return contextInfo.messages
+        .filter((m) => m.role === "assistant")
+        .flatMap((m) =>
+          (m.contentBlocks || [])
+            .filter(
+              (b) =>
+                b.type === "text" &&
+                (b as { text: string }).text?.startsWith("<thinking"),
+            )
+            .map((b) => (b as { text: string }).text),
+        )
+        .join("\n");
+
+    default:
+      return contextInfo.messages.map((m) => m.content).join("\n---\n");
+  }
+}
+
+function buildDecomposePrompt(category: string, content: string): string {
+  // Truncate content to avoid excessive tokens
+  const truncated =
+    content.length > 4000
+      ? `${content.slice(0, 4000)}\n...[truncated]`
+      : content;
+
+  return `You are analyzing a section of an AI conversation context window.
+
+Category: ${category}
+Content:
+---
+${truncated}
+---
+
+Decompose this content into 3-8 semantic sub-components. For each, identify:
+- label: short name (2-5 words)
+- type: one of "instruction", "data", "code", "query", "response", "metadata", "tool", "reasoning"
+- tokens_estimate: approximate token count
+- description: one sentence explaining what this sub-component does
+- importance: 0.0 to 1.0 (how critical is this to the conversation)
+
+Also provide:
+- edges: semantic relationships between sub-components (source_id → target_id with relation label)
+- summary: one sentence summarizing the overall content
+
+Return ONLY valid JSON in this exact format:
+{
+  "nodes": [
+    { "id": "n1", "label": "...", "type": "...", "tokens_estimate": 100, "description": "...", "importance": 0.8 }
+  ],
+  "edges": [
+    { "source": "n1", "target": "n2", "relation": "depends_on" }
+  ],
+  "summary": "..."
+}`;
+}
+
+function parseDecomposeResponse(
+  llmResult: Record<string, unknown>,
+): DecomposeResult | { error: string } {
+  try {
+    // Extract text content from Claude API response
+    const content = llmResult.content as Array<{ type: string; text?: string }>;
+    if (!content || !Array.isArray(content)) {
+      return { error: "Invalid LLM response format" };
+    }
+    const textBlock = content.find((b) => b.type === "text");
+    if (!textBlock?.text) {
+      return { error: "No text in LLM response" };
+    }
+
+    // Extract JSON from response (may be wrapped in markdown code blocks)
+    let jsonStr = textBlock.text.trim();
+    const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonMatch) jsonStr = jsonMatch[1].trim();
+
+    const parsed = JSON.parse(jsonStr);
+    return {
+      nodes: parsed.nodes || [],
+      edges: parsed.edges || [],
+      summary: parsed.summary || "",
+      sourceNode: { label: "", category: "", tokens: 0 },
+    };
+  } catch (e) {
+    return { error: `Failed to parse LLM response: ${e}` };
+  }
+}
 
 function projectEntryForApi(e: CapturedEntry) {
   return projectEntry(e, e.contextInfo);
@@ -189,6 +347,90 @@ export function createApiApp(store: Store): Hono {
       return c.json({ contextInfo });
     }
     return c.json({ error: "Detail not found for this entry" }, 404);
+  });
+
+  // --- Decompose node (LLM-powered) ---
+
+  app.post("/api/entries/:id/decompose", async (c) => {
+    const entryId = parseInt(c.req.param("id"), 10);
+    const { category } = await c.req.json();
+
+    if (!category) {
+      return c.json({ error: "category is required" }, 400);
+    }
+
+    const contextInfo = store.getEntryDetail(entryId);
+    if (!contextInfo) {
+      return c.json({ error: "Entry not found" }, 404);
+    }
+
+    const content = extractCategoryContent(contextInfo, category);
+    if (!content || content.trim().length === 0) {
+      return c.json({ error: "No content found for this category" }, 404);
+    }
+
+    const proxyUrl = process.env.DECOMPOSE_LLM_URL || "http://localhost:4040";
+    const apiKey =
+      process.env.DECOMPOSE_API_KEY || process.env.ANTHROPIC_API_KEY || "";
+
+    if (!apiKey) {
+      return c.json(
+        {
+          error:
+            "No API key configured (set DECOMPOSE_API_KEY or ANTHROPIC_API_KEY)",
+        },
+        500,
+      );
+    }
+
+    try {
+      const llmResponse = await fetch(`${proxyUrl}/v1/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2000,
+          messages: [
+            {
+              role: "user",
+              content: buildDecomposePrompt(category, content),
+            },
+          ],
+        }),
+      });
+
+      if (!llmResponse.ok) {
+        const errText = await llmResponse.text();
+        console.error("Decompose LLM error:", llmResponse.status, errText);
+        return c.json(
+          { error: `LLM request failed: ${llmResponse.status}` },
+          502,
+        );
+      }
+
+      const result = (await llmResponse.json()) as Record<string, unknown>;
+      const subGraph = parseDecomposeResponse(result);
+
+      if ("error" in subGraph) {
+        return c.json(subGraph, 500);
+      }
+
+      // Attach source node info
+      subGraph.sourceNode = {
+        label: category.replace(/_/g, " "),
+        category,
+        tokens: content.length, // rough estimate
+      };
+
+      return c.json(subGraph);
+    } catch (err) {
+      console.error("Decompose error:", err);
+      return c.json({ error: `Decompose request failed: ${err}` }, 500);
+    }
   });
 
   // --- Conversations ---

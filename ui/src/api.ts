@@ -89,6 +89,40 @@ export async function removeSessionTag(conversationId: string, tag: string): Pro
   return data.tags
 }
 
+// --- Decompose ---
+
+export interface DecomposeSubNode {
+  id: string
+  label: string
+  type: string
+  tokens_estimate: number
+  description: string
+  importance: number
+}
+
+export interface DecomposeResult {
+  nodes: DecomposeSubNode[]
+  edges: { source: string; target: string; relation: string }[]
+  summary: string
+  sourceNode: { label: string; category: string; tokens: number }
+}
+
+export async function decomposeNode(
+  entryId: number,
+  category: string
+): Promise<DecomposeResult> {
+  const res = await fetch(`${BASE}/api/entries/${entryId}/decompose`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category })
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+    throw new Error(err.error || `Decompose failed: ${res.status}`)
+  }
+  return res.json()
+}
+
 // --- Visurf Integration ---
 
 const VISURF_DEFAULT_URL = 'http://localhost:4000'

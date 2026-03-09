@@ -18,8 +18,14 @@
  */
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useSessionStore } from '@/stores/session'
+import { decomposeNode as apiDecomposeNode, type DecomposeResult } from '@/api'
 const store = useSessionStore()
 const containerRef = ref<HTMLDivElement | null>(null)
+
+// ═══ Decompose 状态 ═══
+const decomposeLoading = ref(false)
+const decomposeResult = ref<DecomposeResult | null>(null)
+const decomposeError = ref('')
 
 // ═══ 类型定义 ═══
 interface GraphNode {
@@ -607,6 +613,82 @@ const turnLabels = computed(() => {
   return turns.map((turn, gi) => ({ turn, y: 50 + gi * spacing }))
 })
 
+// ═══ Decompose ═══
+async function handleDecompose() {
+  const node = selectedNode.value
+  if (!node || !node.entryId) return
+
+  decomposeLoading.value = true
+  decomposeError.value = ''
+  decomposeResult.value = null
+
+  try {
+    const result = await apiDecomposeNode(node.entryId, node.category)
+    result.sourceNode = {
+      label: node.label,
+      category: node.category,
+      tokens: node.tokens,
+    }
+    decomposeResult.value = result
+  } catch (e) {
+    decomposeError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    decomposeLoading.value = false
+  }
+}
+
+function closeDecompose() {
+  decomposeResult.value = null
+  decomposeError.value = ''
+}
+
+// Decompose 子图布局计算 (径向)
+const decomposeLayout = computed(() => {
+  const dr = decomposeResult.value
+  if (!dr || dr.nodes.length === 0) return { nodes: [], edges: [] }
+
+  const cxD = 300
+  const cyD = 250
+  const baseRadius = 150
+  const count = dr.nodes.length
+
+  const laidOutNodes = dr.nodes.map((n, i) => {
+    const angle = (2 * Math.PI * i) / count - Math.PI / 2
+    const r = baseRadius * (0.7 + n.importance * 0.3)
+    const size = Math.max(16, Math.min(40, Math.sqrt(n.tokens_estimate) * 0.6))
+    return {
+      ...n,
+      cx: cxD + Math.cos(angle) * r,
+      cy: cyD + Math.sin(angle) * r,
+      size,
+    }
+  })
+
+  const nodeMap = new Map(laidOutNodes.map(n => [n.id, n]))
+  const laidOutEdges = dr.edges
+    .filter(e => nodeMap.has(e.source) && nodeMap.has(e.target))
+    .map(e => ({
+      ...e,
+      x1: nodeMap.get(e.source)!.cx,
+      y1: nodeMap.get(e.source)!.cy,
+      x2: nodeMap.get(e.target)!.cx,
+      y2: nodeMap.get(e.target)!.cy,
+    }))
+
+  return { nodes: laidOutNodes, edges: laidOutEdges, center: { cx: cxD, cy: cyD } }
+})
+
+const decomposeTypeColors: Record<string, string> = {
+  instruction: '#0ea5e9',
+  data: '#10b981',
+  code: '#a78bfa',
+  query: '#f59e0b',
+  response: '#b4b4b4',
+  metadata: '#6b7280',
+  tool: '#ec4899',
+  reasoning: '#f97316',
+}
+
 // ═══ 手动刷新 ═══
 function applyUpdate() {
   hasPendingUpdate.value = false
@@ -875,9 +957,138 @@ onUnmounted(() => {
           {{ selectedNode.category }}
         </span>
       </div>
-      <button v-if="selectedNode.entryId" class="detail-btn" @click="store.setInspectorTab('messages')">
-        View in Messages
-      </button>
+      <div class="detail-actions">
+        <button v-if="selectedNode.entryId" class="detail-btn" @click="store.setInspectorTab('messages')">
+          View in Messages
+        </button>
+        <button
+          v-if="selectedNode.entryId"
+          class="detail-btn detail-btn-decompose"
+          :disabled="decomposeLoading"
+          @click="handleDecompose"
+        >
+          {{ decomposeLoading ? 'Decomposing...' : 'Decompose' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Decompose 错误提示 -->
+    <div v-if="decomposeError && !decomposeResult" class="decompose-error">
+      <span>{{ decomposeError }}</span>
+      <button @click="decomposeError = ''">×</button>
+    </div>
+
+    <!-- Decompose 覆盖层子图 -->
+    <div v-if="decomposeResult" class="decompose-overlay" @click.self="closeDecompose">
+      <div class="decompose-panel">
+        <div class="decompose-header">
+          <div class="decompose-title">
+            <span class="decompose-badge" :style="{ background: selectedNode?.color || '#666' }">
+              {{ decomposeResult.sourceNode.category }}
+            </span>
+            <span class="decompose-label">Decompose: {{ decomposeResult.sourceNode.label }}</span>
+          </div>
+          <button class="decompose-close" @click="closeDecompose">×</button>
+        </div>
+
+        <div class="decompose-summary">{{ decomposeResult.summary }}</div>
+
+        <div class="decompose-body">
+          <svg class="decompose-svg" viewBox="0 0 600 500">
+            <!-- 子节点间的边 -->
+            <line
+              v-for="(edge, i) in decomposeLayout.edges"
+              :key="'de-' + i"
+              :x1="edge.x1" :y1="edge.y1"
+              :x2="edge.x2" :y2="edge.y2"
+              stroke="rgba(100,100,100,0.3)"
+              stroke-width="1.5"
+              stroke-dasharray="4,3"
+            />
+
+            <!-- 中心节点到子节点的连线 -->
+            <line
+              v-for="node in decomposeLayout.nodes"
+              :key="'dc-' + node.id"
+              :x1="decomposeLayout.center?.cx || 300"
+              :y1="decomposeLayout.center?.cy || 250"
+              :x2="node.cx" :y2="node.cy"
+              stroke="rgba(150,150,150,0.25)"
+              stroke-width="1"
+            />
+
+            <!-- 中心原始节点 -->
+            <g v-if="decomposeLayout.center">
+              <circle
+                :cx="decomposeLayout.center.cx"
+                :cy="decomposeLayout.center.cy"
+                :r="30"
+                :fill="selectedNode?.color || '#666'"
+                stroke="#fff"
+                stroke-width="2"
+                opacity="0.9"
+              />
+              <text
+                :x="decomposeLayout.center.cx"
+                :y="decomposeLayout.center.cy + 4"
+                text-anchor="middle"
+                fill="#fff"
+                font-size="10"
+                font-weight="700"
+              >
+                {{ decomposeResult.sourceNode.label.length > 10
+                    ? decomposeResult.sourceNode.label.slice(0, 8) + '..'
+                    : decomposeResult.sourceNode.label }}
+              </text>
+            </g>
+
+            <!-- 分解子节点 -->
+            <g v-for="node in decomposeLayout.nodes" :key="'dn-' + node.id">
+              <circle
+                :cx="node.cx" :cy="node.cy"
+                :r="node.size / 2"
+                :fill="decomposeTypeColors[node.type] || '#6b7280'"
+                :stroke="node.importance > 0.7 ? '#fff' : 'rgba(255,255,255,0.3)'"
+                :stroke-width="node.importance > 0.7 ? 2 : 1"
+                :opacity="0.5 + node.importance * 0.5"
+              />
+              <text
+                :x="node.cx"
+                :y="node.cy + 3"
+                text-anchor="middle"
+                fill="#fff"
+                font-size="8"
+                font-weight="600"
+              >
+                {{ node.tokens_estimate > 0 ? formatTokens(node.tokens_estimate) : '' }}
+              </text>
+              <text
+                :x="node.cx"
+                :y="node.cy + node.size / 2 + 12"
+                text-anchor="middle"
+                fill="var(--text-muted, #999)"
+                font-size="9"
+              >
+                {{ node.label.length > 15 ? node.label.slice(0, 13) + '..' : node.label }}
+              </text>
+            </g>
+          </svg>
+        </div>
+
+        <!-- 子节点列表 -->
+        <div class="decompose-list">
+          <div
+            v-for="node in decomposeResult.nodes"
+            :key="'dl-' + node.id"
+            class="decompose-item"
+          >
+            <span class="decompose-item-dot" :style="{ background: decomposeTypeColors[node.type] || '#6b7280' }"></span>
+            <span class="decompose-item-label">{{ node.label }}</span>
+            <span class="decompose-item-type">{{ node.type }}</span>
+            <span class="decompose-item-tokens">~{{ formatTokens(node.tokens_estimate) }}</span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Token 分布条 -->
@@ -1325,5 +1536,187 @@ onUnmounted(() => {
   color: #fff;
   font-weight: 600;
   padding: 0 4px;
+}
+
+// ─── Detail Actions ───
+.detail-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+
+  .detail-btn {
+    flex: 1;
+    margin-top: 0;
+  }
+}
+
+.detail-btn-decompose {
+  background: #7c3aed !important;
+
+  &:hover:not(:disabled) {
+    background: #6d28d9 !important;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: wait;
+  }
+}
+
+// ─── Decompose Error ───
+.decompose-error {
+  position: absolute;
+  bottom: 32px;
+  left: 12px;
+  right: 260px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  color: #ef4444;
+  z-index: 16;
+
+  span { flex: 1; }
+
+  button {
+    background: none;
+    border: none;
+    color: #ef4444;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 4px;
+  }
+}
+
+// ─── Decompose Overlay ───
+.decompose-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(2px);
+}
+
+.decompose-panel {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: var(--shadow-lg);
+  width: 90%;
+  max-width: 660px;
+  max-height: 85%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.decompose-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-dim);
+}
+
+.decompose-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.decompose-badge {
+  font-size: 9px;
+  font-weight: 700;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.decompose-label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.decompose-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+
+  &:hover { color: var(--text-primary); }
+}
+
+.decompose-summary {
+  padding: 8px 16px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-dim);
+}
+
+.decompose-body {
+  flex: 1;
+  min-height: 300px;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.decompose-svg {
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+}
+
+.decompose-list {
+  border-top: 1px solid var(--border-dim);
+  padding: 8px 16px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.decompose-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: var(--text-xs);
+}
+
+.decompose-item-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.decompose-item-label {
+  flex: 1;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.decompose-item-type {
+  color: var(--text-muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.decompose-item-tokens {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-weight: 600;
 }
 </style>
