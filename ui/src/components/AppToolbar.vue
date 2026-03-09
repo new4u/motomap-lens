@@ -138,6 +138,14 @@ function goBack() {
   store.setView('dashboard')
 }
 
+function openSettings() {
+  showResetMenu.value = false
+  store.setInspectorTab('settings')
+  if (store.view !== 'inspector') {
+    store.setView('inspector')
+  }
+}
+
 async function copySessionId() {
   const id = selectedSessionId.value
   if (!id) return
@@ -316,6 +324,10 @@ function onSessionIdKeydown(e: KeyboardEvent) {
               @click="handleRemoveSession"
             >
               <i class="i-carbon-subtract-alt" /> Remove this session
+            </button>
+            <div class="dropdown-sep" />
+            <button class="dropdown-item" @click="openSettings">
+              <i class="i-carbon-settings" /> Settings
             </button>
           </div>
         </Transition>

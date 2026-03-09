@@ -197,6 +197,30 @@ onMounted(loadConfig)
         <i class="i-carbon-add-alt" /> Add Provider
       </button>
 
+      <!-- Connection info -->
+      <div class="connect-card">
+        <div class="connect-header">
+          <i class="i-carbon-connect" /> External Connection
+        </div>
+        <div class="connect-body">
+          <div class="connect-row">
+            <span class="connect-label">Proxy URL</span>
+            <code class="connect-value">http://localhost:4040</code>
+          </div>
+          <div class="connect-row">
+            <span class="connect-label">Claude Code</span>
+            <code class="connect-value">ANTHROPIC_BASE_URL=http://localhost:4040</code>
+          </div>
+          <div class="connect-row">
+            <span class="connect-label">OpenAI SDK</span>
+            <code class="connect-value">OPENAI_BASE_URL=http://localhost:4040</code>
+          </div>
+          <div class="connect-hint">
+            Set these env vars in your terminal, then AI tools will route through MotoMap proxy.
+          </div>
+        </div>
+      </div>
+
       <!-- Proxy status + actions -->
       <div class="proxy-footer">
         <div class="proxy-status">
@@ -435,6 +459,62 @@ onMounted(loadConfig)
 
 .add-provider-btn {
   align-self: flex-start;
+}
+
+// Connection info card
+.connect-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.connect-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-field);
+  border-bottom: 1px solid var(--border-dim);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.connect-body {
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.connect-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.connect-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.connect-value {
+  @include mono-text;
+  font-size: var(--text-xs);
+  color: var(--accent-blue);
+  background: var(--accent-blue-dim);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  user-select: all;
+}
+
+.connect-hint {
+  font-size: var(--text-xs);
+  color: var(--text-ghost);
+  margin-top: var(--space-1);
 }
 
 // Footer

@@ -665,23 +665,57 @@ export function createApiApp(store: Store): Hono {
     const config = readProxyConfigFile();
     if (!config) {
       // Return default empty config
-      return c.json({
+      // No JSON config file — build defaults from environment variables
+      const envDefaults: ProxyConfigFile = {
         providers: {
           anthropic: {
-            endpoints: [],
-            strategy: "failover" as const,
+            endpoints: [
+              {
+                url:
+                  process.env.UPSTREAM_ANTHROPIC_URL ||
+                  "https://api.anthropic.com",
+                apiKey: process.env.ANTHROPIC_API_KEY || "",
+                weight: 100,
+                enabled: true,
+              },
+            ],
+            strategy: "failover",
           },
           openai: {
-            endpoints: [],
-            strategy: "failover" as const,
+            endpoints: [
+              {
+                url:
+                  process.env.UPSTREAM_OPENAI_URL || "https://api.openai.com",
+                apiKey: process.env.OPENAI_API_KEY || "",
+                weight: 100,
+                enabled: true,
+              },
+            ],
+            strategy: "failover",
           },
           gemini: {
-            endpoints: [],
-            strategy: "failover" as const,
+            endpoints: [
+              {
+                url:
+                  process.env.UPSTREAM_GEMINI_URL ||
+                  "https://generativelanguage.googleapis.com",
+                apiKey: process.env.GEMINI_API_KEY || "",
+                weight: 100,
+                enabled: true,
+              },
+            ],
+            strategy: "failover",
           },
         },
-        updatedAt: "",
-      });
+        updatedAt: "(from env)",
+      };
+      // Mask keys
+      for (const p of Object.values(envDefaults.providers)) {
+        for (const ep of p.endpoints) {
+          ep.apiKey = ep.apiKey ? maskApiKey(ep.apiKey) : "";
+        }
+      }
+      return c.json(envDefaults);
     }
     // Mask API keys before sending to frontend
     const masked: ProxyConfigFile = {

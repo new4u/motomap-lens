@@ -16,16 +16,15 @@ const tabs: { id: InspectorTab; label: string; icon: string }[] = [
   { id: 'messages', label: 'Messages', icon: 'i-carbon-chat' },
   { id: 'timeline', label: 'Timeline', icon: 'i-carbon-activity' },
   { id: 'visurf', label: 'Map', icon: 'i-carbon-map' },
-  { id: 'settings', label: 'Settings', icon: 'i-carbon-settings' },
 ]
 
-const tabComponents = {
+const tabComponents: Record<string, unknown> = {
   overview: OverviewTab,
   messages: MessagesTab,
   timeline: TimelineTab,
   visurf: VisurfTab,
   settings: SettingsTab,
-} satisfies Record<InspectorTab, unknown>
+}
 
 const activeTabComponent = computed(() => tabComponents[store.inspectorTab])
 
